@@ -146,7 +146,7 @@
         </div>
         
         <footer class="mt-12 text-center text-xs text-gray-500">
-            <p>Disclaimer: This tool is for informational purposes only. Crypto data provided by CoinMarketCap. AI analysis is experimental.</p>
+            <p>Disclaimer: This tool is for informational purposes only. Crypto data provided by CoinGecko. AI analysis is experimental.</p>
         </footer>
     </div>
 
@@ -170,7 +170,6 @@
 
             let chart;
             let liveIntervalId = null;
-            const coinMarketCapApiKey = "76237940-31ae-4d57-be40-81667bb9c263";
             const geminiApiKey = "AIzaSyB1mXM529mCQVgT39mkxUI-EZemuEaCfW8"; 
             const geminiApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${geminiApiKey}`;
             
@@ -191,18 +190,18 @@
                 setLoadingState(true, `Fetching latest price for ${ticker}...`);
                 
                 try {
-                    const latestPrice = await fetchCoinMarketCapQuote(ticker);
+                    const latestPrice = await fetchCoinGeckoQuote(ticker);
 
                     let initialData, message, isSimulated = false;
 
                     if (latestPrice === null) {
-                        console.warn("CoinMarketCap fetch failed. Falling back to full simulation.");
+                        console.warn("CoinGecko fetch failed. Falling back to full simulation.");
                         isSimulated = true;
                         initialData = generateInitialData(ticker, null);
                         message = `⚠️ Could not fetch real data. Displaying a full simulation for "${ticker}".`;
                     } else {
                         initialData = generateInitialData(ticker, latestPrice);
-                        message = `ℹ️ Chart grounded with latest real price from CoinMarketCap ($${latestPrice.toFixed(4)}).`;
+                        message = `ℹ️ Chart grounded with latest real price from CoinGecko ($${latestPrice.toFixed(4)}).`;
                     }
 
                     dom.dataSourceNotice.textContent = message;
@@ -276,35 +275,32 @@
                 }, 3000);
             }
 
-            async function fetchCoinMarketCapQuote(ticker) {
-                const proxyUrl = 'https://api.allorigins.win/raw?url=';
-                const apiUrl = `https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest?symbol=${ticker}`;
+            async function fetchCoinGeckoQuote(ticker) {
+                const tickerToIdMap = {
+                    'BTC': 'bitcoin', 'ETH': 'ethereum', 'SOL': 'solana', 'XRP': 'ripple',
+                    'DOGE': 'dogecoin', 'ADA': 'cardano', 'AVAX': 'avalanche-2',
+                    'DOT': 'polkadot', 'MATIC': 'matic-network', 'BNB': 'binancecoin',
+                    'LTC': 'litecoin', 'SHIB': 'shiba-inu'
+                };
+                const coinId = tickerToIdMap[ticker] || ticker.toLowerCase();
+                const apiUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`;
 
                 try {
-                    const response = await fetch(proxyUrl + encodeURIComponent(apiUrl), {
-                        headers: {
-                            'X-CMC_PRO_API_KEY': coinMarketCapApiKey
-                        }
-                    });
-
+                    const response = await fetch(apiUrl);
                     if (!response.ok) {
-                        throw new Error(`The public proxy responded with status: ${response.status}.`);
+                        throw new Error(`CoinGecko API responded with status: ${response.status}.`);
                     }
                     const data = await response.json();
                     
-                    if (data.status.error_code !== 0) {
-                        throw new Error(`CoinMarketCap API Error: ${data.status.error_message}`);
-                    }
-                    
-                    if (data.data && data.data[ticker]) {
-                        return data.data[ticker].quote.USD.price;
+                    if (data[coinId] && data[coinId].usd) {
+                        return data[coinId].usd;
                     } else {
-                        throw new Error(`Symbol "${ticker}" not found on CoinMarketCap.`);
+                        throw new Error(`Symbol "${ticker}" (ID: ${coinId}) not found on CoinGecko.`);
                     }
 
                 } catch (error) {
-                    console.error("fetchCoinMarketCapQuote failed:", error.message);
-                    showError(`Could not fetch real-time data. The public proxy used for API calls may be down. The app will fall back to simulation. Error: ${error.message}`);
+                    console.error("fetchCoinGeckoQuote failed:", error.message);
+                    showError(`Could not fetch real-time data from CoinGecko. The app will fall back to simulation. Error: ${error.message}`);
                     return null;
                 }
             }
