@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI-Powered Trading Analysis</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js and plugins -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0a0a0a;
+            color: #e5e7eb;
+        }
+        .chart-container {
+            position: relative;
+            height: 60vh;
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #1f2937; }
+        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+        
+        /* Loading Spinner */
+        .loader {
+            width: 48px;
+            height: 48px;
+            border: 5px solid #FFF;
+            border-bottom-color: #4f46e5;
+            border-radius: 50%;
+            display: inline-block;
+            box-sizing: border-box;
+            animation: rotation 1s linear infinite;
+        }
+        .mini-loader {
+            width: 20px;
+            height: 20px;
+            border: 3px solid #6b7280;
+            border-bottom-color: #e5e7eb;
+        }
+        @keyframes rotation {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* Custom radio button */
+        .timeframe-radio:checked + label {
+            background-color: #4f46e5;
+            border-color: #4f46e5;
+            color: white;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-200">
+
+    <div id="app" class="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+        
+        <header class="mb-8 text-center">
+            <h1 class="text-4xl font-bold text-white flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 mr-3 text-indigo-400" viewBox="0 0 20 20" fill="currentColor"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" /></svg>
+                AI Trading Analysis
+            </h1>
+            <p class="text-md text-gray-400 mt-2">Live market data analysis with an EMA crossover strategy and AI insights.</p>
+        </header>
+
+        <div class="mb-4 flex flex-col sm:flex-row gap-3 items-center justify-center">
+            <input id="ticker-input" type="text" placeholder="e.g., BTC, ETH" class="w-full sm:w-60 bg-gray-800 border border-gray-600 text-white placeholder-gray-400 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block p-3 transition">
+            <button id="analyze-btn" class="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg transition duration-300 ease-in-out flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd" /></svg>
+                Analyze
+            </button>
+        </div>
+        
+        <div class="mb-6 text-center">
+            <fieldset class="inline-flex rounded-lg shadow-sm bg-gray-800 p-1">
+                <legend class="sr-only">Analysis Timeframe</legend>
+                <div>
+                  <input type="radio" name="timeframe" value="5min" id="5m" class="sr-only timeframe-radio" checked>
+                  <label for="5m" class="cursor-pointer text-sm font-semibold text-gray-300 rounded-md py-2 px-4 transition border border-transparent">5m</label>
+                </div>
+                <div>
+                  <input type="radio" name="timeframe" value="15min" id="15m" class="sr-only timeframe-radio">
+                  <label for="15m" class="cursor-pointer text-sm font-semibold text-gray-300 rounded-md py-2 px-4 transition border border-transparent">15m</label>
+                </div>
+                 <div>
+                  <input type="radio" name="timeframe" value="60min" id="60m" class="sr-only timeframe-radio">
+                  <label for="60m" class="cursor-pointer text-sm font-semibold text-gray-300 rounded-md py-2 px-4 transition border border-transparent">60m</label>
+                </div>
+              </fieldset>
+        </div>
+
+        <div id="results-container" class="hidden">
+            <div id="data-source-notice" class="bg-blue-900/50 border border-blue-700 text-blue-300 text-sm rounded-lg p-3 mb-4 text-center"></div>
+             <div class="grid grid-cols-1 lg:grid-cols-5 gap-8">
+                <div class="lg:col-span-3 bg-gray-800/50 rounded-xl p-2 md:p-4 shadow-2xl shadow-black/30">
+                     <div class="chart-container">
+                        <canvas id="stockChart"></canvas>
+                     </div>
+                </div>
+
+                <div class="lg:col-span-2 space-y-8">
+                    <div class="bg-gray-800/50 rounded-xl p-6 shadow-2xl shadow-black/30">
+                        <h2 class="text-2xl font-bold text-white mb-4">Trading Tips</h2>
+                        <div id="tips-container">
+                            <div class="text-center p-4 bg-gray-900/50 rounded-lg mb-4">
+                                <p class="text-sm text-gray-400 mb-1">Latest Signal</p>
+                                <p id="latest-tip" class="text-xl font-bold">N/A</p>
+                            </div>
+                            <h3 class="text-lg font-semibold text-white mb-2">Tips Log</h3>
+                            <div id="tips-log" class="max-h-40 overflow-y-auto space-y-2 pr-2">
+                                <p class="text-gray-500 text-sm">No signals generated yet.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-gray-800/50 rounded-xl p-6 shadow-2xl shadow-black/30">
+                        <h2 class="text-2xl font-bold text-white mb-4">AI Technical Analysis</h2>
+                        <div class="text-gray-300 prose prose-invert max-w-none space-y-4">
+                            <div id="ai-analysis-text"></div>
+                            <div>
+                                <h3 class="font-semibold text-indigo-400">AI Forecast:</h3>
+                                <p id="ai-forecast-text"></p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-gray-800/50 rounded-xl p-6 shadow-2xl shadow-black/30">
+                        <h2 class="text-2xl font-bold text-white mb-4">Market Sentiment</h2>
+                        <div id="ai-sentiment-container"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="initial-state" class="text-center py-16">
+            <div id="loader" class="hidden mx-auto mb-4"><div class="loader"></div></div>
+            <p id="status-text" class="text-gray-400">Enter a crypto symbol (e.g. BTC) to begin analysis.</p>
+        </div>
+        
+        <footer class="mt-12 text-center text-xs text-gray-500">
+            <p>Disclaimer: This tool is for informational purposes only. Crypto data provided by CoinMarketCap. AI analysis is experimental.</p>
+        </footer>
+    </div>
+
+    <script type="module">
+        document.addEventListener('DOMContentLoaded', () => {
+            const dom = {
+                tickerInput: document.getElementById('ticker-input'),
+                analyzeBtn: document.getElementById('analyze-btn'),
+                resultsContainer: document.getElementById('results-container'),
+                initialState: document.getElementById('initial-state'),
+                loader: document.getElementById('loader'),
+                statusText: document.getElementById('status-text'),
+                aiAnalysisText: document.getElementById('ai-analysis-text'),
+                aiForecastText: document.getElementById('ai-forecast-text'),
+                aiSentimentContainer: document.getElementById('ai-sentiment-container'),
+                latestTip: document.getElementById('latest-tip'),
+                tipsLog: document.getElementById('tips-log'),
+                dataSourceNotice: document.getElementById('data-source-notice'),
+                ctx: document.getElementById('stockChart').getContext('2d'),
+            };
+
+            let chart;
+            let liveIntervalId = null;
+            const coinMarketCapApiKey = "76237940-31ae-4d57-be40-81667bb9c263";
+            const geminiApiKey = "AIzaSyB1mXM529mCQVgT39mkxUI-EZemuEaCfW8"; 
+            const geminiApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${geminiApiKey}`;
+            
+            const analysisSchema = { type: "OBJECT", properties: { analysis_text: { type: "STRING" }, forecast_text: { type: "STRING" }, support_levels: { type: "ARRAY", items: { type: "NUMBER" } }, resistance_levels: { type: "ARRAY", items: { type: "NUMBER" } } }, required: ["analysis_text", "forecast_text", "support_levels", "resistance_levels"] };
+            const sentimentSchema = { type: "OBJECT", properties: { sentiment: { type: "STRING", enum: ["Bullish", "Bearish", "Neutral"] }, summary: { type: "STRING" } }, required: ["sentiment", "summary"] };
+            
+            dom.analyzeBtn.addEventListener('click', handleAnalysis);
+            dom.tickerInput.addEventListener('keyup', (e) => { if (e.key === 'Enter') handleAnalysis(); });
+
+
+            async function handleAnalysis() {
+                if (liveIntervalId) clearInterval(liveIntervalId);
+
+                const ticker = dom.tickerInput.value.trim().toUpperCase();
+                if (!ticker) return showError("Please enter a crypto symbol.");
+                
+                const timeframe = document.querySelector('input[name="timeframe"]:checked').value;
+                setLoadingState(true, `Fetching latest price for ${ticker}...`);
+                
+                try {
+                    const latestPrice = await fetchCoinMarketCapQuote(ticker);
+
+                    let initialData, message, isSimulated = false;
+
+                    if (latestPrice === null) {
+                        console.warn("CoinMarketCap fetch failed. Falling back to full simulation.");
+                        isSimulated = true;
+                        initialData = generateInitialData(ticker, null);
+                        message = `⚠️ Could not fetch real data. Displaying a full simulation for "${ticker}".`;
+                    } else {
+                        initialData = generateInitialData(ticker, latestPrice);
+                        message = `ℹ️ Chart grounded with latest real price from CoinMarketCap ($${latestPrice.toFixed(4)}).`;
+                    }
+
+                    dom.dataSourceNotice.textContent = message;
+                    
+                    const signals = generateEMASignals(initialData);
+                    
+                    createChart(initialData, ticker, signals);
+                    updateTipsSection(signals.tipsLog);
+                    
+                    dom.resultsContainer.classList.remove('hidden');
+                    setLoadingState(false);
+                    
+                    startLiveSimulation(isSimulated);
+                    
+                    setAiLoadingStates();
+                    
+                    const analysisSystemPrompt = `You are a financial technical analyst. Analyze historical price data in the context of an EMA crossover strategy (9-period vs 15-period EMA). The user is focused on a ${timeframe} timeframe. Provide a concise analysis, a speculative forecast, and identify potential support/resistance levels. DO NOT suggest entry or exit points as they are already calculated. Be cautious and do not give financial advice.`;
+                    const aiPrompt = `Analyze the following intraday price data for ${ticker} for a ${timeframe} trader. Data is [timestamp, price].\n\n${JSON.stringify(initialData.slice(-100))}`;
+                    
+                    getAiAnalysis(aiPrompt, analysisSystemPrompt)
+                        .then(updateUiWithAnalysis)
+                        .catch(err => {
+                            console.error("AI Analysis Error:", err);
+                            dom.aiAnalysisText.innerHTML = `<p class="text-red-400">Could not generate AI analysis.</p>`;
+                            dom.aiForecastText.textContent = 'N/A';
+                        });
+
+                    getNewsSentiment(ticker)
+                        .then(updateUiWithSentiment)
+                        .catch(err => {
+                            console.error("Sentiment Analysis Error:", err);
+                            dom.aiSentimentContainer.innerHTML = `<p class="text-red-400">Could not fetch market sentiment.</p>`;
+                        });
+
+                } catch (error) {
+                    console.error("Analysis Error:", error);
+                    showError(error.message);
+                    setLoadingState(false);
+                }
+            }
+
+            function startLiveSimulation(isFullSimulation) {
+                if(!isFullSimulation) {
+                    dom.dataSourceNotice.textContent += ' Now simulating live ticks.';
+                }
+
+                liveIntervalId = setInterval(() => {
+                    if (!chart) return;
+
+                    const lastDataPoint = chart.data.datasets[0].data.slice(-1);
+                    const lastPrice = lastDataPoint[0];
+                    const newPrice = lastPrice * (1 + (Math.random() - 0.5) * 0.001);
+                    const newTimestamp = Date.now();
+
+                    chart.data.labels.push(newTimestamp);
+                    chart.data.datasets[0].data.push(newPrice);
+                    chart.data.labels.shift();
+                    chart.data.datasets[0].data.shift();
+                    
+                    const fullData = chart.data.labels.map((label, index) => [label, chart.data.datasets[0].data[index]]);
+                    
+                    chart.data.datasets[1].data = calculateEMA(fullData, 9);
+                    chart.data.datasets[2].data = calculateEMA(fullData, 15);
+                    
+                    const newSignals = generateEMASignals(fullData);
+                    chart.data.datasets[3].data = newSignals.entryPoints;
+                    chart.data.datasets[4].data = newSignals.exitPoints;
+                    
+                    updateTipsSection(newSignals.tipsLog);
+                    chart.update('quiet');
+                }, 3000);
+            }
+
+            async function fetchCoinMarketCapQuote(ticker) {
+                const proxyUrl = 'https://api.allorigins.win/raw?url=';
+                const apiUrl = `https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest?symbol=${ticker}`;
+
+                try {
+                    const response = await fetch(proxyUrl + encodeURIComponent(apiUrl), {
+                        headers: {
+                            'X-CMC_PRO_API_KEY': coinMarketCapApiKey
+                        }
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`The public proxy responded with status: ${response.status}.`);
+                    }
+                    const data = await response.json();
+                    
+                    if (data.status.error_code !== 0) {
+                        throw new Error(`CoinMarketCap API Error: ${data.status.error_message}`);
+                    }
+                    
+                    if (data.data && data.data[ticker]) {
+                        return data.data[ticker].quote.USD.price;
+                    } else {
+                        throw new Error(`Symbol "${ticker}" not found on CoinMarketCap.`);
+                    }
+
+                } catch (error) {
+                    console.error("fetchCoinMarketCapQuote failed:", error.message);
+                    showError(`Could not fetch real-time data. The public proxy used for API calls may be down. The app will fall back to simulation. Error: ${error.message}`);
+                    return null;
+                }
+            }
+
+            function setAiLoadingStates() {
+                 dom.aiAnalysisText.innerHTML = `<div class="flex items-center gap-2 text-gray-400"><div class="loader mini-loader"></div><p>Generating technical analysis...</p></div>`;
+                 dom.aiForecastText.textContent = '';
+                 dom.aiSentimentContainer.innerHTML = `<div class="flex items-center gap-2 text-gray-400"><div class="loader mini-loader"></div><p>Analyzing latest news...</p></div>`;
+            }
+
+            function setLoadingState(isLoading, message = '') {
+                dom.initialState.classList.toggle('hidden', !isLoading);
+                dom.loader.classList.toggle('hidden', !isLoading);
+                if (isLoading) {
+                    dom.statusText.textContent = message;
+                    dom.resultsContainer.classList.add('hidden');
+                    dom.analyzeBtn.disabled = true;
+                    dom.analyzeBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                } else {
+                    dom.analyzeBtn.disabled = false;
+                    dom.analyzeBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                }
+            }
+
+            function showError(message) {
+                if (liveIntervalId) clearInterval(liveIntervalId);
+                dom.resultsContainer.classList.add('hidden');
+                dom.initialState.classList.remove('hidden');
+                dom.loader.classList.add('hidden');
+                dom.statusText.textContent = `Error: ${message}`;
+            }
+
+            function calculateEMA(data, period) {
+                if (!data || data.length < period) return [];
+                const k = 2 / (period + 1);
+                let emaArray = new Array(data.length).fill(null);
+                
+                let initialSum = 0;
+                for (let i = 0; i < period; i++) { initialSum += data[i][1]; }
+                emaArray[period - 1] = initialSum / period;
+
+                for (let i = period; i < data.length; i++) {
+                    emaArray[i] = data[i][1] * k + emaArray[i - 1] * (1 - k);
+                }
+                return emaArray;
+            }
+            
+            function generateEMASignals(data) {
+                const ema9 = calculateEMA(data, 9);
+                const ema15 = calculateEMA(data, 15);
+                const entryPoints = [], exitPoints = [], tipsLog = [];
+
+                for (let i = 15; i < data.length; i++) {
+                    if (ema9[i-1] === null || ema15[i-1] === null || ema9[i] === null || ema15[i] === null) continue;
+
+                    if (ema9[i-1] <= ema15[i-1] && ema9[i] > ema15[i]) {
+                        const signal = { x: data[i][0], y: data[i][1], reason: 'EMA 9 crossed above EMA 15' };
+                        entryPoints.push(signal);
+                        tipsLog.push({ type: 'BUY', price: data[i][1], date: new Date(data[i][0]), reason: signal.reason });
+                    }
+                    if (ema9[i-1] >= ema15[i-1] && ema9[i] < ema15[i]) {
+                        const signal = { x: data[i][0], y: data[i][1], reason: 'EMA 15 crossed above EMA 9' };
+                        exitPoints.push(signal);
+                        tipsLog.push({ type: 'SELL', price: data[i][1], date: new Date(data[i][0]), reason: signal.reason });
+                    }
+                }
+                return { entryPoints, exitPoints, tipsLog };
+            }
+
+            function updateTipsSection(log) {
+                if (!log || log.length === 0) {
+                    dom.latestTip.textContent = 'No Signals';
+                    dom.tipsLog.innerHTML = '<p class="text-gray-500 text-sm">No recent signals found.</p>';
+                    return;
+                }
+                const lastTip = log[log.length - 1];
+                dom.latestTip.textContent = `${lastTip.type} @ $${lastTip.price.toFixed(4)}`;
+                dom.latestTip.className = `text-xl font-bold ${lastTip.type === 'BUY' ? 'text-green-400' : 'text-red-400'}`;
+                dom.tipsLog.innerHTML = log.slice().reverse().map(tip => `
+                    <div class="p-2 bg-gray-900/50 rounded-md border-l-4 ${tip.type === 'BUY' ? 'border-green-500' : 'border-red-500'}">
+                        <div class="flex justify-between items-center">
+                            <span class="font-bold ${tip.type === 'BUY' ? 'text-green-400' : 'text-red-400'}">${tip.type}</span>
+                            <span class="font-mono text-white">$${tip.price.toFixed(4)}</span>
+                        </div>
+                        <p class="text-xs text-gray-400">${tip.date.toLocaleString()}</p>
+                    </div>`).join('');
+            }
+
+            function generateInitialData(ticker, latestPrice) {
+                const prices = [];
+                const now = Date.now();
+                const intervalInMillis = 5 * 60 * 1000;
+                const numInitialPoints = 300;
+                let price = latestPrice || ticker.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 500 + 50;
+
+                const futurePrices = [[now, price]];
+                for (let i = 1; i < numInitialPoints; i++) {
+                    price /= (1 + (Math.random() - 0.5) * 0.005);
+                    if (price < 1) price = 1;
+                    const timestamp = now - (i * intervalInMillis);
+                    futurePrices.push([timestamp, price]);
+                }
+                return futurePrices.reverse();
+            }
+            
+            async function getAiAnalysis(prompt, systemPrompt) {
+                const payload = { contents: [{ parts: [{ text: prompt }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { responseMimeType: "application/json", responseSchema: analysisSchema } };
+                return callGeminiApi(payload);
+            }
+
+            async function getNewsSentiment(ticker) {
+                const prompt = `Based on recent news headlines for "${ticker}", what is the overall market sentiment? Summarize in 2-3 sentences. Respond with ONLY a valid JSON object matching this schema: ${JSON.stringify(sentimentSchema)}.`;
+                const payload = { 
+                    contents: [{ parts: [{ text: prompt }] }], 
+                    tools: [{ "google_search": {} }]
+                };
+                return callGeminiApi(payload);
+            }
+
+            async function callGeminiApi(payload) {
+                let attempts = 0, delay = 1000;
+                while (attempts < 3) {
+                    try {
+                        const response = await fetch(geminiApiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                        if (response.ok) {
+                            const result = await response.json();
+                            let textResponse = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                            if (!textResponse) throw new Error("Invalid response from Gemini API.");
+                            
+                            if (payload.tools && !payload.generationConfig?.responseMimeType) {
+                                textResponse = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
+                            }
+
+                            return JSON.parse(textResponse);
+                        }
+                        if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+                            const errorBody = await response.text();
+                            console.error("Gemini API Error Body:", errorBody);
+                            throw new Error(`Gemini API request failed with client error: ${response.status}`);
+                        }
+                        attempts++;
+                        if (attempts >= 3) throw new Error(`Gemini API request failed after retries with status: ${response.status}`);
+                        await new Promise(res => setTimeout(res, delay));
+                        delay *= 2;
+                    } catch (error) {
+                        if (error.message.includes("client error")) throw error;
+                        attempts++;
+                        if (attempts >= 3) throw error;
+                        await new Promise(res => setTimeout(res, delay));
+                        delay *= 2;
+                    }
+                }
+            }
+
+            function createChart(historicalData, ticker, signals) {
+                if (Chart.getChart("stockChart")) Chart.getChart("stockChart").destroy();
+                
+                chart = new Chart(dom.ctx, {
+                    type: 'line',
+                    data: { 
+                        labels: historicalData.map(d => d[0]), 
+                        datasets: [
+                            { 
+                                label: `${ticker} Price`, 
+                                data: historicalData.map(d => d[1]), 
+                                borderColor: '#6b7280', 
+                                borderWidth: 2, 
+                                tension: 0.1, 
+                                pointRadius: 0, 
+                                fill: true, 
+                                backgroundColor: context => { 
+                                    const chart = context.chart;
+                                    const {ctx, chartArea} = chart;
+                                    if (!chartArea) return null;
+                                    const g = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom); 
+                                    g.addColorStop(0, 'rgba(107, 114, 128, 0.3)'); 
+                                    g.addColorStop(1, 'rgba(107, 114, 128, 0)'); 
+                                    return g; 
+                                } 
+                            },
+                            { label: 'EMA 9', data: calculateEMA(historicalData, 9), borderColor: '#4f46e5', borderWidth: 1.5, pointRadius: 0, tension: 0.2 },
+                            { label: 'EMA 15', data: calculateEMA(historicalData, 15), borderColor: '#db2777', borderWidth: 1.5, pointRadius: 0, tension: 0.2 },
+                            { label: 'Buy Signals', data: signals.entryPoints, type: 'scatter', backgroundColor: 'rgba(34, 197, 94, 1)', pointStyle: 'triangle', radius: 8, rotation: 0, hoverRadius: 12 },
+                            { label: 'Sell Signals', data: signals.exitPoints, type: 'scatter', backgroundColor: 'rgba(239, 68, 68, 1)', pointStyle: 'triangle', radius: 8, rotation: 180, hoverRadius: 12 }
+                        ]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false, interaction: { intersect: false, mode: 'index' },
+                        scales: { x: { type: 'time', time: { unit: 'hour', tooltipFormat: 'MMM d, HH:mm' }, ticks: { color: '#9ca3af', maxRotation: 0, minRotation: 0, autoSkip: true, maxTicksLimit: 7 }, grid: { color: 'rgba(255, 255, 255, 0.1)' } }, y: { ticks: { color: '#9ca3af', callback: v => `$${v.toLocaleString()}` }, grid: { color: 'rgba(255, 255, 255, 0.1)' } } },
+                        plugins: { legend: { labels: { color: '#d1d5db' } }, tooltip: { callbacks: { label: c => c.dataset.label.includes('Signal') ? `${c.dataset.label.slice(0,-1)}: ${c.raw.reason}` : `${c.dataset.label}: $${c.parsed.y.toLocaleString()}` } }, annotation: { annotations: {} } }
+                    }
+                });
+            }
+
+            function updateUiWithAnalysis(analysisData) {
+                dom.aiAnalysisText.innerHTML = `<p>${analysisData.analysis_text.replace(/\n/g, '</p><p>')}</p>`;
+                dom.aiForecastText.textContent = analysisData.forecast_text;
+                const annotations = {};
+                analysisData.support_levels.forEach((l, i) => { annotations[`s${i}`] = createLineAnnotation(l, 'Support', 'rgba(34, 197, 94, 0.7)'); });
+                analysisData.resistance_levels.forEach((l, i) => { annotations[`r${i}`] = createLineAnnotation(l, 'Resistance', 'rgba(239, 68, 68, 0.7)'); });
+                if (chart) {
+                    chart.options.plugins.annotation.annotations = annotations;
+                    chart.update();
+                }
+            }
+
+            function updateUiWithSentiment(sentimentData) {
+                const sentimentColors = { Bullish: 'text-green-400', Bearish: 'text-red-400', Neutral: 'text-gray-400' };
+                dom.aiSentimentContainer.innerHTML = `<p class="text-lg font-semibold ${sentimentColors[sentimentData.sentiment] || ''}">${sentimentData.sentiment}</p><p class="text-gray-300 mt-2">${sentimentData.summary}</p>`;
+            }
+
+            function createLineAnnotation(value, label, color) {
+                return {
+                    type: 'line', yMin: value, yMax: value, borderColor: color, borderWidth: 2, borderDash: [6, 6],
+                    label: { content: `${label}: $${value.toLocaleString()}`, enabled: true, position: 'end', backgroundColor: color, color: 'white', font: { weight: 'bold' } }
+                };
+            }
+        });
+    </script>
+</body>
+</html>
+
