@@ -143,7 +143,7 @@
             };
 
             const geminiApiKey = "AIzaSyB1mXM529mCQVgT39mkxUI-EZemuEaCfW8"; 
-            const geminiApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${geminiApiKey}`;
+            const geminiApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`;
             
             const analysisSchema = { type: "OBJECT", properties: { analysis_text: { type: "STRING" }, forecast_text: { type: "STRING" } }, required: ["analysis_text", "forecast_text"] };
             const sentimentSchema = { type: "OBJECT", properties: { sentiment: { type: "STRING", enum: ["Bullish", "Bearish", "Neutral"] }, summary: { type: "STRING" } }, required: ["sentiment", "summary"] };
