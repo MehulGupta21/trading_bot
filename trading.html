@@ -141,8 +141,14 @@
                 dataSourceNotice: document.getElementById('data-source-notice'),
                 tradingViewContainer: document.getElementById('tradingview-widget-container'),
             };
+            
+            // --- State Management Variables ---
+            let priceHistory = [];
+            let signalPollingInterval = null;
+            let lastSignalState = null;
 
-            const geminiApiKey = "AIzaSyB1mXM529mCQVgT39mkxUI-EZemuEaCfW8"; 
+            const geminiApiKey = "AIzaSyB1mXM529mCQVgT39mkxUI-EZemuEaCfW8";
+            const coinlayerApiKey = "7c229be80345fddd17b5d3a0d927ce7f";
             const geminiApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${geminiApiKey}`;
             
             const analysisSchema = { type: "OBJECT", properties: { analysis_text: { type: "STRING" }, forecast_text: { type: "STRING" } }, required: ["analysis_text", "forecast_text"] };
@@ -153,6 +159,10 @@
 
 
             async function handleAnalysis() {
+                if (signalPollingInterval) clearInterval(signalPollingInterval);
+                lastSignalState = null;
+                priceHistory = [];
+
                 const ticker = dom.tickerInput.value.trim().toUpperCase();
                 if (!ticker) return showError("Please enter a crypto symbol.");
                 
@@ -162,21 +172,34 @@
                     // Create TradingView Widget immediately
                     createTradingViewWidget(ticker);
 
-                    // Generate simulated data in the background for AI analysis and tips
-                    const historicalData = generateInitialData(ticker);
-                    const message = `ℹ️ AI analysis is powered by simulated data. Chart is from TradingView.`;
-                    dom.dataSourceNotice.textContent = message;
+                    const latestPrice = await fetchCoinlayerCurrentPrice(ticker);
                     
-                    const signals = generateEMASignals(historicalData);
-                    updateTipsSection(signals.tipsLog);
+                    if (latestPrice === null) {
+                        showError(`Could not fetch data for ${ticker}. AI analysis and tips disabled.`);
+                        dom.dataSourceNotice.textContent = `⚠️ Could not fetch data for "${ticker}". AI analysis and tips disabled. Check the symbol.`;
+                        setLoadingState(false);
+                        dom.resultsContainer.classList.remove('hidden');
+                        return;
+                    }
                     
+                    priceHistory = generateInitialData(ticker, latestPrice);
+                    dom.dataSourceNotice.textContent = `ℹ️ Chart by TradingView. AI analysis and real-time tips powered by Coinlayer data.`;
+
+                    // Initial signal generation for the log
+                    const initialSignals = generateEMASignals(priceHistory);
+                    updateTipsSection(initialSignals.tipsLog, true);
+                    lastSignalState = initialSignals.lastSignal;
+                    
+                    updateLatestSignal(priceHistory);
+
                     dom.resultsContainer.classList.remove('hidden');
                     setLoadingState(false);
                     
+                    signalPollingInterval = setInterval(() => pollRealTimeData(ticker), 10000);
+
                     setAiLoadingStates();
-                    
-                    const analysisSystemPrompt = `You are a financial technical analyst. Analyze historical price data in the context of an EMA crossover strategy (9-period vs 15-period EMA). The user is viewing a TradingView chart. Provide a concise analysis and a speculative forecast. DO NOT suggest entry or exit points as they are already calculated from simulated data. Be cautious and do not give financial advice.`;
-                    const aiPrompt = `Analyze the following simulated intraday price data for ${ticker}. Data is [timestamp, price].\n\n${JSON.stringify(historicalData.slice(-100))}`;
+                    const aiPrompt = `Analyze the following intraday price data for ${ticker}. Data is [timestamp, price].\n\n${JSON.stringify(priceHistory.slice(-100))}`;
+                    const analysisSystemPrompt = `You are a financial technical analyst. Analyze historical price data in the context of an EMA crossover strategy (9-period vs 15-period EMA). The user is viewing a TradingView chart. Provide a concise analysis and a speculative forecast. DO NOT suggest entry or exit points as they are already calculated. Be cautious and do not give financial advice.`;
                     
                     getAiAnalysis(aiPrompt, analysisSystemPrompt)
                         .then(updateUiWithAnalysis)
@@ -221,21 +244,84 @@
                 });
             }
 
-            function generateInitialData(ticker) {
+            async function pollRealTimeData(ticker) {
+                const currentPrice = await fetchCoinlayerCurrentPrice(ticker);
+                if (currentPrice === null) return; // Fetch failed, skip this tick
+
+                priceHistory.push([Date.now(), currentPrice]);
+                if (priceHistory.length > 300) { // Keep history from getting too long
+                    priceHistory.shift();
+                }
+                
+                updateLatestSignal(priceHistory, currentPrice);
+            }
+            
+            function updateLatestSignal(data, currentPrice) {
+                const price = currentPrice || data[data.length - 1][1];
+                const latestSignal = getLatestSignalState(data);
+                if(!latestSignal) return;
+
+                dom.latestTip.textContent = `${latestSignal} @ $${price.toFixed(4)}`;
+                dom.latestTip.className = `text-xl font-bold ${latestSignal === 'BUY' ? 'text-green-400' : 'text-red-400'}`;
+
+                if (lastSignalState !== null && latestSignal !== lastSignalState) {
+                    addSignalToLog({
+                        type: latestSignal,
+                        price: price,
+                        date: new Date()
+                    });
+                }
+                lastSignalState = latestSignal;
+            }
+
+            function addSignalToLog(tip) {
+                 const logEntry = document.createElement('div');
+                 logEntry.className = `p-2 bg-gray-900/50 rounded-md border-l-4 ${tip.type === 'BUY' ? 'border-green-500' : 'border-red-500'}`;
+                 logEntry.innerHTML = `
+                        <div class="flex justify-between items-center">
+                            <span class="font-bold ${tip.type === 'BUY' ? 'text-green-400' : 'text-red-400'}">${tip.type}</span>
+                            <span class="font-mono text-white">$${tip.price.toFixed(4)}</span>
+                        </div>
+                        <p class="text-xs text-gray-400">${tip.date.toLocaleString()}</p>
+                 `;
+                 const firstChild = dom.tipsLog.firstChild;
+                 dom.tipsLog.insertBefore(logEntry, firstChild);
+            }
+
+            async function fetchCoinlayerCurrentPrice(ticker) {
+                // Using a CORS proxy to bypass browser restrictions
+                const proxyUrl = 'https://api.allorigins.win/raw?url=';
+                const apiUrl = `http://api.coinlayer.com/api/live?access_key=${coinlayerApiKey}&symbols=${ticker}`;
+                try {
+                    const response = await fetch(proxyUrl + encodeURIComponent(apiUrl));
+                    if (!response.ok) throw new Error(`Coinlayer API proxy responded with status: ${response.status}.`);
+                    const data = await response.json();
+                    if (data.success && data.rates && data.rates[ticker]) {
+                        return data.rates[ticker];
+                    }
+                    throw new Error(data.error?.info || `Symbol "${ticker}" not found on Coinlayer.`);
+                } catch(error) {
+                    console.error("fetchCoinlayerCurrentPrice failed:", error.message);
+                    return null;
+                }
+            }
+            
+            function generateInitialData(ticker, latestPrice) {
                 const prices = [];
                 const now = Date.now();
-                const intervalInMillis = 3600 * 1000; // 1 hour for EMA calc
-                const numInitialPoints = 300;
-                let price = ticker.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 50000 + 1000;
+                const intervalInMillis = 5 * 60 * 1000; // 5 minute intervals
+                const numInitialPoints = 200; // Enough for EMA warmup
+                let price = latestPrice;
 
-                for (let i = numInitialPoints; i > 0; i--) {
+                const futurePrices = [[now, price]];
+                for (let i = 1; i < numInitialPoints; i++) {
+                    price /= (1 + (Math.random() - 0.5) * 0.005); // reverse walk
                     const timestamp = now - (i * intervalInMillis);
-                    prices.push([timestamp, price]);
-                    price *= (1 + (Math.random() - 0.5) * 0.02);
-                     if (price < 50) price = 50;
+                    futurePrices.push([timestamp, price]);
                 }
-                return prices;
+                return futurePrices.reverse();
             }
+
 
             function setAiLoadingStates() {
                  dom.aiAnalysisText.innerHTML = `<div class="flex items-center gap-2 text-gray-400"><div class="loader mini-loader"></div><p>Generating technical analysis...</p></div>`;
@@ -258,65 +344,73 @@
             }
 
             function showError(message) {
+                if (signalPollingInterval) clearInterval(signalPollingInterval);
                 dom.resultsContainer.classList.add('hidden');
                 dom.initialState.classList.remove('hidden');
                 dom.loader.classList.add('hidden');
                 dom.statusText.textContent = `Error: ${message}`;
             }
 
-            function calculateEMA(data, period) {
-                if (!data || data.length < period) return [];
+            function calculateEMA(prices, period) {
+                if (!prices || prices.length < period) return [];
                 const k = 2 / (period + 1);
-                const prices = data.map(p => p[1]);
                 let emaArray = new Array(prices.length).fill(null);
-                
                 let initialSum = 0;
                 for (let i = 0; i < period; i++) { initialSum += prices[i]; }
                 emaArray[period - 1] = initialSum / period;
-
                 for (let i = period; i < prices.length; i++) {
                     emaArray[i] = prices[i] * k + emaArray[i - 1] * (1 - k);
                 }
                 return emaArray;
             }
             
+            function getLatestSignalState(data) {
+                const prices = data.map(p => p[1]);
+                if (prices.length < 15) return null;
+
+                const ema9 = calculateEMA(prices, 9);
+                const ema15 = calculateEMA(prices, 15);
+
+                const lastEma9 = ema9[ema9.length - 1];
+                const lastEma15 = ema15[ema15.length - 1];
+
+                if (lastEma9 > lastEma15) return 'BUY';
+                if (lastEma15 > lastEma9) return 'SELL';
+                return lastSignalState; // No change
+            }
+
             function generateEMASignals(data) {
-                const ema9 = calculateEMA(data, 9);
-                const ema15 = calculateEMA(data, 15);
+                const prices = data.map(p => p[1]);
+                const ema9 = calculateEMA(prices, 9);
+                const ema15 = calculateEMA(prices, 15);
                 const tipsLog = [];
+                let lastSignal = null;
 
                 for (let i = 15; i < data.length; i++) {
                     if (ema9[i-1] === null || ema15[i-1] === null || ema9[i] === null || ema15[i] === null) continue;
 
-                    if (ema9[i-1] <= ema15[i-1] && ema9[i] > ema15[i]) {
-                        const signal = { reason: 'EMA 9 crossed above EMA 15' };
-                        tipsLog.push({ type: 'BUY', price: data[i][1], date: new Date(data[i][0]), reason: signal.reason });
-                    }
-                    if (ema9[i-1] >= ema15[i-1] && ema9[i] < ema15[i]) {
-                        const signal = { reason: 'EMA 15 crossed above EMA 9' };
-                        tipsLog.push({ type: 'SELL', price: data[i][1], date: new Date(data[i][0]), reason: signal.reason });
+                    let currentSignal = null;
+                    if (ema9[i-1] <= ema15[i-1] && ema9[i] > ema15[i]) currentSignal = 'BUY';
+                    if (ema9[i-1] >= ema15[i-1] && ema9[i] < ema15[i]) currentSignal = 'SELL';
+
+                    if(currentSignal && currentSignal !== lastSignal) {
+                        tipsLog.push({ type: currentSignal, price: data[i][1], date: new Date(data[i][0])});
+                        lastSignal = currentSignal;
                     }
                 }
-                return { tipsLog };
+                return { tipsLog, lastSignal };
             }
 
-            function updateTipsSection(log) {
+            function updateTipsSection(log, reset = false) {
+                 if (reset) {
+                    dom.tipsLog.innerHTML = '';
+                }
                 if (!log || log.length === 0) {
-                    dom.latestTip.textContent = 'No Signals';
-                    dom.tipsLog.innerHTML = '<p class="text-gray-500 text-sm">No recent signals found.</p>';
+                    dom.tipsLog.innerHTML = '<p class="text-gray-500 text-sm">No crossover signals in historical data.</p>';
                     return;
                 }
-                const lastTip = log[log.length - 1];
-                dom.latestTip.textContent = `${lastTip.type} @ $${lastTip.price.toFixed(4)}`;
-                dom.latestTip.className = `text-xl font-bold ${lastTip.type === 'BUY' ? 'text-green-400' : 'text-red-400'}`;
-                dom.tipsLog.innerHTML = log.slice().reverse().map(tip => `
-                    <div class="p-2 bg-gray-900/50 rounded-md border-l-4 ${tip.type === 'BUY' ? 'border-green-500' : 'border-red-500'}">
-                        <div class="flex justify-between items-center">
-                            <span class="font-bold ${tip.type === 'BUY' ? 'text-green-400' : 'text-red-400'}">${tip.type}</span>
-                            <span class="font-mono text-white">$${tip.price.toFixed(4)}</span>
-                        </div>
-                        <p class="text-xs text-gray-400">${tip.date.toLocaleString()}</p>
-                    </div>`).join('');
+                
+                log.forEach(tip => addSignalToLog(tip));
             }
 
             async function getAiAnalysis(prompt, systemPrompt) {
@@ -382,3 +476,4 @@
     </script>
 </body>
 </html>
+
